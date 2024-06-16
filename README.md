@@ -64,7 +64,7 @@ psql -U your_username
 2. パスワードを設定します。
 
 ```
-\password your_username
+\password your_password
 ```
 
 3. データベースを作成します。

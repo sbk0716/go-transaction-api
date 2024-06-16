@@ -64,7 +64,7 @@ psql -U your_username
 2. Set a password.
 
 ```
-\password your_username
+\password your_password
 ```
 
 3. Create a database.
