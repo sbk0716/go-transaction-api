@@ -1,6 +1,6 @@
 # Go Transaction API
 
-This repository provides sample code for a transaction processing API using Go language. The API transfers amounts between a sender and a receiver and records the transaction history.
+This repository contains sample code for a transaction processing API written in Go. This API handles the transfer of funds from a sender to a recipient and records the transaction history.
 
 ## Prerequisites
 
