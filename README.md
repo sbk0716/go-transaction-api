@@ -10,6 +10,56 @@
 
 ## セットアップ
 
+### HomebrewによるPostgreSQLのインストールと初期設定
+
+1. Homebrewを使用してPostgreSQLをインストールします。
+
+```bash
+brew install postgresql@14
+```
+
+2. PostgreSQLのデータベースクラスタを初期化します。
+
+```bash
+initdb --locale=C -E UTF-8 /opt/homebrew/var/postgresql@14
+```
+
+3. PostgreSQLを起動します。
+
+```bash
+brew services start postgresql@14
+```
+
+4. PostgreSQLが正しくインストールされたことを確認します。
+
+```bash
+psql --version
+```
+
+### PostgreSQLのタイムゾーン設定
+
+PostgreSQLで日時情報をUTCで保持するように設定します。
+
+1. PostgreSQLの設定ファイルを編集します。通常、`postgresql.conf`は以下のディレクトリにあります：
+
+```bash
+nano /opt/homebrew/var/postgresql@14/postgresql.conf
+```
+
+2. `timezone`設定を以下のように変更します：
+
+```conf
+timezone = 'UTC'
+```
+
+3. PostgreSQLを再起動して設定を反映させます。
+
+```bash
+brew services restart postgresql@14
+```
+
+### プロジェクトのセットアップ
+
 1. リポジトリをクローンします。
 
 ```bash
@@ -111,6 +161,12 @@ INSERT INTO balances (user_id, amount, valid_from, valid_to) VALUES
   ('user2', 10000000, '2023-01-01 00:00:00', '9999-12-31 23:59:59');
 ```
 
+6. パスワードを設定します。
+
+```sql
+\password
+```
+
 ## APIの実行
 
 1. APIサーバーを起動します。
@@ -134,14 +190,98 @@ curl -X POST -H "Content-Type: application/json" -d '{
 3. 残高照会のテスト
 
 ```bash
+# 現在の残高照会
 curl http://localhost:8080/balance/user1
+
+# 特定の時点での残高照会
+curl http://localhost:8080/balance/user1?as_of=2023-06-22T10:00:00Z
 ```
 
 4. 取引履歴照会のテスト
 
 ```bash
+# 全ての取引履歴照会
 curl http://localhost:8080/transaction-history/user1
+
+# 特定の時点までの取引履歴照会
+curl http://localhost:8080/transaction-history/user1?as_of=2023-06-22T10:00:00Z
 ```
+
+## 取引処理エンドポイントのエラーシナリオ
+
+取引処理エンドポイント(`/transaction`)に以下のようなデータを送信するとエラーが発生します。
+
+1. 存在しない送金者IDまたは受取人IDを指定した場合
+
+```json
+{
+  "sender_id": "non_existent_user",
+  "receiver_id": "user2",
+  "amount": 100,
+  "transaction_id": "1234567890",
+  "effective_date": "2023-06-22T10:00:00Z"
+}
+```
+
+このリクエストは、存在しないユーザーIDが指定されているため、エラーとなります。APIは送金者と受取人の両方が実在するユーザーであることを確認します。
+
+2. 送金額が0以下の場合
+
+```json
+{
+  "sender_id": "user1",
+  "receiver_id": "user2",
+  "amount": -100,
+  "transaction_id": "1234567890",
+  "effective_date": "2023-06-22T10:00:00Z"
+}
+```
+
+このリクエストは、送金額が負の値であるため、エラーとなります。送金額は常に正の値である必要があります。
+
+3. 送金額が送金者の残高を超えている場合
+
+```json
+{
+  "sender_id": "user1",
+  "receiver_id": "user2",
+  "amount": 1000000000,
+  "transaction_id": "1234567890",
+  "effective_date": "2023-06-22T10:00:00Z"
+}
+```
+
+このリクエストは、送金額が送金者の残高を超えているため、エラーとなります。APIは送金処理前に送金者の残高が十分であることを確認します。
+
+4. effective_dateが現在時刻より前の日時の場合
+
+```json
+{
+  "sender_id": "user1",
+  "receiver_id": "user2",
+  "amount": 100,
+  "transaction_id": "1234567890",
+  "effective_date": "2022-06-22T10:00:00Z"
+}
+```
+
+このリクエストは、effective_dateが現在時刻より前の日時であるため、エラーとなります。APIはeffective_dateが現在時刻以降の値であることを確認します。
+
+5. 重複したtransaction_idを指定した場合
+
+```json
+{
+  "sender_id": "user1",
+  "receiver_id": "user2",
+  "amount": 100,
+  "transaction_id": "1234567890",
+  "effective_date": "2023-06-22T10:00:00Z"
+}
+```
+
+このリクエストは、既に使用されたtransaction_idを指定しているため、エラーとなります。APIはtransaction_idの重複を防ぐために、一意のtransaction_idのみを受け入れます。
+
+これらのエラーシナリオは、APIの一貫性と整合性を維持するために重要です。APIは受信したデータを検証し、不正なリクエストを適切に処理します。
 
 ## Bitemporal Data Modelについて
 
@@ -152,10 +292,10 @@ curl http://localhost:8080/transaction-history/user1
 
 この方式により、過去のある時点での残高状態を再現したり、将来の取引を事前に登録したりすることが可能になります。
 
-## 排他制御と多重リクエスト防止
+## 排他制御と重複リクエスト防止
 
 1. 排他制御：トランザクション内で`SELECT ... FOR UPDATE`を使用し、更新対象のレコードをロックしています。
-2. 多重リクエスト防止：`transaction_id`をユニークキーとして使用し、同一のトランザクションIDによる重複リクエストを防いでいます。
+2. 重複リクエスト防止：`transaction_id`をユニークキーとして使用し、同一のトランザクションIDによる重複リクエストを防いでいます。
 
 ## テストの実行
 
@@ -166,6 +306,16 @@ go test ./...
 ```
 
 これにより、プロジェクト内のすべてのテストが実行されます。
+
+### テストの仕組み
+
+このAPIのテストは、`main_test.go`ファイルで定義されています。主に以下の2つのテストが行われます：
+
+1. **単一リクエストのテスト**：`TestTransactionEndpoint`関数で実行されます。`testcases.json`ファイルからテストケースを読み込み、各ケースに対してリクエストを送信し、期待されるレスポンスが返ってくるかをチェックします。
+
+2. **並行リクエストのテスト**：`TestConcurrentTransactions`関数で実行されます。複数の並行リクエストを同時に送信し、全てのリクエストが成功するかをチェックします。これにより、APIの並行処理能力とデータの整合性が確認されます。
+
+テストを実行すると、各テストケースの結果が出力されます。全てのテストが成功すれば、APIが正しく動作していることが確認できます。
 
 ## 注意事項
 

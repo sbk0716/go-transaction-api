@@ -1,0 +1,80 @@
+[
+  {
+    "name": "Valid transaction",
+    "requestBody": {
+      "sender_id": "user1",
+      "receiver_id": "user2",
+      "amount": 100,
+      "transaction_id": "test_valid"
+    },
+    "expectedCode": 200,
+    "expectedErr": ""
+  },
+  {
+    "name": "Non-existent sender",
+    "requestBody": {
+      "sender_id": "non_existent_user",
+      "receiver_id": "user2",
+      "amount": 100,
+      "transaction_id": "test_non_existent_sender"
+    },
+    "expectedCode": 500,
+    "expectedErr": "User does not exist"
+  },
+  {
+    "name": "Non-existent receiver",
+    "requestBody": {
+      "sender_id": "user1",
+      "receiver_id": "non_existent_user",
+      "amount": 100,
+      "transaction_id": "test_non_existent_receiver"
+    },
+    "expectedCode": 500,
+    "expectedErr": "User does not exist"
+  },
+  {
+    "name": "Negative amount",
+    "requestBody": {
+      "sender_id": "user1",
+      "receiver_id": "user2",
+      "amount": -100,
+      "transaction_id": "test_negative_amount"
+    },
+    "expectedCode": 400,
+    "expectedErr": "リクエストデータが無効です"
+  },
+  {
+    "name": "Insufficient balance",
+    "requestBody": {
+      "sender_id": "user1",
+      "receiver_id": "user2",
+      "amount": 1000000000,
+      "transaction_id": "test_insufficient_balance"
+    },
+    "expectedCode": 500,
+    "expectedErr": "Insufficient balance"
+  },
+  {
+    "name": "Past effective date",
+    "requestBody": {
+      "sender_id": "user1",
+      "receiver_id": "user2",
+      "amount": 100,
+      "transaction_id": "test_past_effective_date",
+      "effective_date": "2022-06-22T10:00:00Z"
+    },
+    "expectedCode": 400,
+    "expectedErr": "effective_dateは現在時刻以降の値を指定してください"
+  },
+  {
+    "name": "Duplicate transaction ID",
+    "requestBody": {
+      "sender_id": "user1",
+      "receiver_id": "user2",
+      "amount": 100,
+      "transaction_id": "test_duplicate"
+    },
+    "expectedCode": 500,
+    "expectedErr": "Duplicate transaction"
+  }
+]

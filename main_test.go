@@ -1,14 +1,78 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
-	"strings"
+	"os"
 	"sync"
 	"testing"
 	"time"
 )
+
+type TestCase struct {
+	Name         string                 `json:"name"`
+	RequestBody  map[string]interface{} `json:"requestBody"`
+	ExpectedCode int                    `json:"expectedCode"`
+	ExpectedErr  string                 `json:"expectedErr"`
+}
+
+func TestTransactionEndpoint(t *testing.T) {
+	// テストケースをJSONファイルから読み込む
+	testCasesFile, err := os.Open("testcases.json")
+	if err != nil {
+		t.Fatalf("Failed to open test cases file: %v", err)
+	}
+	defer testCasesFile.Close()
+
+	testCasesData, err := io.ReadAll(testCasesFile)
+	if err != nil {
+		t.Fatalf("Failed to read test cases file: %v", err)
+	}
+
+	var testCases []TestCase
+	err = json.Unmarshal(testCasesData, &testCases)
+	if err != nil {
+		t.Fatalf("Failed to parse test cases: %v", err)
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.Name, func(t *testing.T) {
+			requestBody, err := json.Marshal(tc.RequestBody)
+			if err != nil {
+				t.Fatalf("Failed to marshal request body: %v", err)
+			}
+
+			resp, err := http.Post("http://localhost:8080/transaction", "application/json", bytes.NewBuffer(requestBody))
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != tc.ExpectedCode {
+				t.Errorf("Expected status code %d but got %d", tc.ExpectedCode, resp.StatusCode)
+			}
+
+			var result map[string]string
+			err = json.NewDecoder(resp.Body).Decode(&result)
+			if err != nil {
+				t.Fatalf("Failed to decode response: %v", err)
+			}
+
+			if tc.ExpectedErr != "" {
+				if errMsg, ok := result["error"]; !ok || errMsg != tc.ExpectedErr {
+					t.Errorf("Expected error message '%s' but got '%s'", tc.ExpectedErr, errMsg)
+				}
+			} else {
+				if _, ok := result["error"]; ok {
+					t.Errorf("Unexpected error: %s", result["error"])
+				}
+			}
+		})
+	}
+}
 
 func TestConcurrentTransactions(t *testing.T) {
 	var wg sync.WaitGroup
@@ -28,10 +92,10 @@ func TestConcurrentTransactions(t *testing.T) {
 			timestamp := time.Now().Format("20060102150405")
 
 			// リクエストボディを作成
-			requestBody := fmt.Sprintf(`{"sender_id": "user1", "receiver_id": "user2", "amount": 100, "transaction_id": "test_%d_%s"}`, index, timestamp)
+			requestBody := fmt.Sprintf(`{"sender_id": "user1", "receiver_id": "user2", "amount": 100, "transaction_id": "test_concurrent_%d_%s"}`, index, timestamp)
 
 			// リクエストを送信
-			resp, err := http.Post("http://localhost:8080/transaction", "application/json", strings.NewReader(requestBody))
+			resp, err := http.Post("http://localhost:8080/transaction", "application/json", bytes.NewBuffer([]byte(requestBody)))
 			if err != nil {
 				// リクエストの送信に失敗した場合、エラーメッセージを追加
 				mu.Lock()

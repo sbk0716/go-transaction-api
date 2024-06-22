@@ -58,6 +58,11 @@ func HandleTransaction(db *sqlx.DB) echo.HandlerFunc {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": "リクエストデータが無効です"})
 		}
 
+		// effective_dateが現在時刻より前の場合はエラーを返します
+		if req.EffectiveDate.Before(time.Now()) {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "effective_dateは現在時刻以降の値を指定してください"})
+		}
+
 		// 取引処理を実行します
 		if err := processTransaction(db, req); err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -177,9 +182,9 @@ func updateBalance(tx *sqlx.Tx, userID string, amount int, effectiveDate time.Ti
 	// 現在の有効な残高レコードを取得します
 	var currentBalance Balance
 	err := tx.Get(&currentBalance, `
-		SELECT * FROM balances 
-		WHERE user_id = $1 AND valid_to = '9999-12-31 23:59:59'
-	`, userID)
+    SELECT * FROM balances 
+    WHERE user_id = $1 AND valid_to = '9999-12-31 23:59:59'
+  `, userID)
 	if err != nil {
 		return errors.New("Failed to get current balance")
 	}
@@ -192,19 +197,19 @@ func updateBalance(tx *sqlx.Tx, userID string, amount int, effectiveDate time.Ti
 
 	// 現在のレコードの有効期間を更新します
 	_, err = tx.Exec(`
-		UPDATE balances 
-		SET valid_to = $1 
-		WHERE user_id = $2 AND valid_to = '9999-12-31 23:59:59'
-	`, effectiveDate, userID)
+    UPDATE balances 
+    SET valid_to = $1 
+    WHERE user_id = $2 AND valid_to = '9999-12-31 23:59:59'
+  `, effectiveDate, userID)
 	if err != nil {
 		return errors.New("Failed to update current balance record")
 	}
 
 	// 新しい残高レコードを挿入します
 	_, err = tx.Exec(`
-		INSERT INTO balances (user_id, amount, valid_from, valid_to) 
-		VALUES ($1, $2, $3, '9999-12-31 23:59:59')
-	`, userID, newAmount, effectiveDate)
+    INSERT INTO balances (user_id, amount, valid_from, valid_to) 
+    VALUES ($1, $2, $3, '9999-12-31 23:59:59')
+  `, userID, newAmount, effectiveDate)
 	if err != nil {
 		return errors.New("Failed to insert new balance record")
 	}
@@ -215,9 +220,9 @@ func updateBalance(tx *sqlx.Tx, userID string, amount int, effectiveDate time.Ti
 // recordTransaction は取引履歴を記録します
 func recordTransaction(tx *sqlx.Tx, req TransactionRequest) error {
 	_, err := tx.Exec(`
-		INSERT INTO transaction_history (sender_id, receiver_id, amount, transaction_id, effective_date, recorded_at) 
-		VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
-	`, req.SenderID, req.ReceiverID, req.Amount, req.TransactionID, req.EffectiveDate)
+    INSERT INTO transaction_history (sender_id, receiver_id, amount, transaction_id, effective_date, recorded_at) 
+    VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
+  `, req.SenderID, req.ReceiverID, req.Amount, req.TransactionID, req.EffectiveDate)
 	if err != nil {
 		return errors.New("Failed to record transaction history")
 	}
@@ -228,11 +233,25 @@ func recordTransaction(tx *sqlx.Tx, req TransactionRequest) error {
 func HandleGetBalance(db *sqlx.DB) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		userID := c.Param("userId")
+		asOf := c.QueryParam("as_of")
+
 		var balance Balance
-		err := db.Get(&balance, `
-			SELECT * FROM balances 
-			WHERE user_id = $1 AND valid_to = '9999-12-31 23:59:59'
-		`, userID)
+		var err error
+
+		if asOf == "" {
+			// as_ofパラメータが指定されていない場合は現在の残高を取得
+			err = db.Get(&balance, `
+        SELECT * FROM balances
+        WHERE user_id = $1 AND valid_to = '9999-12-31 23:59:59'
+      `, userID)
+		} else {
+			// as_ofパラメータが指定されている場合はその時点での残高を取得
+			err = db.Get(&balance, `
+        SELECT * FROM balances
+        WHERE user_id = $1 AND valid_from <= $2 AND valid_to > $2
+      `, userID, asOf)
+		}
+
 		if err == sql.ErrNoRows {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": "User not found"})
 		}
@@ -247,12 +266,27 @@ func HandleGetBalance(db *sqlx.DB) echo.HandlerFunc {
 func HandleGetTransactionHistory(db *sqlx.DB) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		userID := c.Param("userId")
+		asOf := c.QueryParam("as_of")
+
 		var history []TransactionHistory
-		err := db.Select(&history, `
-			SELECT * FROM transaction_history 
-			WHERE sender_id = $1 OR receiver_id = $1 
-			ORDER BY effective_date DESC, recorded_at DESC
-		`, userID)
+		var err error
+
+		if asOf == "" {
+			// as_ofパラメータが指定されていない場合は全ての取引履歴を取得
+			err = db.Select(&history, `
+        SELECT * FROM transaction_history
+        WHERE sender_id = $1 OR receiver_id = $1
+        ORDER BY effective_date DESC, recorded_at DESC
+      `, userID)
+		} else {
+			// as_ofパラメータが指定されている場合はその時点までの取引履歴を取得
+			err = db.Select(&history, `
+        SELECT * FROM transaction_history
+        WHERE (sender_id = $1 OR receiver_id = $1) AND effective_date <= $2
+        ORDER BY effective_date DESC, recorded_at DESC
+      `, userID, asOf)
+		}
+
 		if err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to get transaction history"})
 		}
