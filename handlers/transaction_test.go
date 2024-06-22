@@ -20,67 +20,96 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// CustomValidator はEchoのカスタムバリデータです
+// CustomValidator構造体の定義
 type CustomValidator struct {
 	validator *validator.Validate
 }
 
-// Validate は与えられた構造体を検証します
 func (cv *CustomValidator) Validate(i interface{}) error {
 	return cv.validator.Struct(i)
 }
 
 func TestHandleTransaction(t *testing.T) {
-	// テスト用のデータベースをセットアップ
+	// テストデータベースのセットアップ
 	db := SetupTestDB(t)
 	defer db.Close()
 
-	// Echoのインスタンスを作成
+	// Echoインスタンスの作成
 	e := echo.New()
 	e.Validator = &CustomValidator{validator: validator.New()}
 
-	// テストデータをJSONファイルから読み込む
-	testDataFile, err := os.Open("../testdata/transaction_test_data.json")
-	require.NoError(t, err)
-	defer testDataFile.Close()
-
-	var testCases []struct {
-		Name           string             `json:"name"`
-		RequestBody    TransactionRequest `json:"requestBody"`
-		ExpectedStatus int                `json:"expectedStatus"`
-		ExpectedError  string             `json:"expectedError"`
+	tests := []struct {
+		name           string
+		request        TransactionRequest
+		expectedStatus int
+		expectedError  string
+	}{
+		{
+			name: "Valid transaction",
+			request: TransactionRequest{
+				SenderID:      "user1",
+				ReceiverID:    "user2",
+				Amount:        100,
+				TransactionID: "test-transaction-1",
+				EffectiveDate: time.Now().Add(time.Hour),
+			},
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name: "Non-existent sender",
+			request: TransactionRequest{
+				SenderID:      "nonexistent",
+				ReceiverID:    "user2",
+				Amount:        100,
+				TransactionID: "test-transaction-2",
+				EffectiveDate: time.Now().Add(time.Hour),
+			},
+			expectedStatus: http.StatusInternalServerError,
+			expectedError:  "User does not exist",
+		},
+		{
+			name: "Insufficient balance",
+			request: TransactionRequest{
+				SenderID:      "user1",
+				ReceiverID:    "user2",
+				Amount:        2000,
+				TransactionID: "test-transaction-3",
+				EffectiveDate: time.Now().Add(time.Hour),
+			},
+			expectedStatus: http.StatusInternalServerError,
+			expectedError:  "Insufficient balance",
+		},
 	}
-	err = json.NewDecoder(testDataFile).Decode(&testCases)
-	require.NoError(t, err)
 
-	for _, tc := range testCases {
-		t.Run(tc.Name, func(t *testing.T) {
-			// リクエストボディを作成
-			reqBody, err := json.Marshal(tc.RequestBody)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// リクエストの準備
+			reqBody, err := json.Marshal(tt.request)
 			require.NoError(t, err)
 
-			// Echoのリクエストを作成
 			req := httptest.NewRequest(http.MethodPost, "/transaction", bytes.NewReader(reqBody))
 			req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 			rec := httptest.NewRecorder()
 			c := e.NewContext(req, rec)
 
-			// ハンドラーを実行
-			err = HandleTransaction(db)(c)
+			// ハンドラーの実行
+			_ = HandleTransaction(db)(c)
 
 			// アサーション
-			if tc.ExpectedError != "" {
-				assert.Error(t, err)
-				assert.Contains(t, err.Error(), tc.ExpectedError)
-				assert.Equal(t, tc.ExpectedStatus, rec.Code)
+			assert.Equal(t, tt.expectedStatus, rec.Code)
+
+			var resp map[string]string
+			err = json.Unmarshal(rec.Body.Bytes(), &resp)
+			require.NoError(t, err)
+
+			if tt.expectedError == "" {
+				assert.Equal(t, "取引が成功しました", resp["message"])
 			} else {
-				assert.NoError(t, err)
-				assert.Equal(t, tc.ExpectedStatus, rec.Code)
+				assert.Contains(t, resp["error"], tt.expectedError)
 			}
 		})
 	}
 }
-
 func TestHandleTransaction_ConcurrentRequests(t *testing.T) {
 	// テスト用のデータベースをセットアップ
 	db := SetupTestDB(t)
