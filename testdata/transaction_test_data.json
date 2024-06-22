@@ -1,0 +1,85 @@
+[
+  {
+    "name": "Valid_transaction",
+    "request_body": {
+      "sender_id": "user1",
+      "receiver_id": "user2",
+      "amount": 100,
+      "transaction_id": "tx1",
+      "effective_date": "2023-06-01T10:00:00Z"
+    },
+    "expected_status": 200
+  },
+  {
+    "name": "Non-existent_sender",
+    "request_body": {
+      "sender_id": "user10",
+      "receiver_id": "user2",
+      "amount": 100,
+      "transaction_id": "tx2",
+      "effective_date": "2023-06-01T10:00:00Z"
+    },
+    "expected_status": 500,
+    "expected_error": "User does not exist"
+  },
+  {
+    "name": "Non-existent_receiver",
+    "request_body": {
+      "sender_id": "user1",
+      "receiver_id": "user20",
+      "amount": 100,
+      "transaction_id": "tx3",
+      "effective_date": "2023-06-01T10:00:00Z"
+    },
+    "expected_status": 500,
+    "expected_error": "User does not exist"
+  },
+  {
+    "name": "Negative_amount",
+    "request_body": {
+      "sender_id": "user1",
+      "receiver_id": "user2",
+      "amount": -100,
+      "transaction_id": "tx4",
+      "effective_date": "2023-06-01T10:00:00Z"
+    },
+    "expected_status": 400,
+    "expected_error": "リクエストデータが無効です"
+  },
+  {
+    "name": "Insufficient_balance",
+    "request_body": {
+      "sender_id": "user1",
+      "receiver_id": "user2",
+      "amount": 10000,
+      "transaction_id": "tx5",
+      "effective_date": "2023-06-01T10:00:00Z"
+    },
+    "expected_status": 500,
+    "expected_error": "Insufficient balance"
+  },
+  {
+    "name": "Past_effective_date",
+    "request_body": {
+      "sender_id": "user1",
+      "receiver_id": "user2",
+      "amount": 100,
+      "transaction_id": "tx6",
+      "effective_date": "2022-01-01T00:00:00Z"
+    },
+    "expected_status": 400,
+    "expected_error": "effective_dateは現在時刻以降の値を指定してください"
+  },
+  {
+    "name": "Duplicate_transaction_ID",
+    "request_body": {
+      "sender_id": "user1",
+      "receiver_id": "user2",
+      "amount": 100,
+      "transaction_id": "tx1",
+      "effective_date": "2023-06-01T10:00:00Z"
+    },
+    "expected_status": 500,
+    "expected_error": "Duplicate transaction"
+  }
+]

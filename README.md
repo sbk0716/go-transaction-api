@@ -93,13 +93,14 @@ DB_PORT=5432
 1. PostgreSQLにログインします。
 
 ```bash
-psql -U your_username
+psql -d postgres -U your_username
 ```
 
 2. データベースを作成します。
 
 ```sql
 CREATE DATABASE your_database_name;
+CREATE DATABASE your_database_name_for_test;
 ```
 
 3. データベースに接続します。
