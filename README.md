@@ -61,14 +61,23 @@ CREATE DATABASE your_database_name;
 4. 必要なテーブルを作成します。
 
 ```sql
-CREATE TABLE balances (
-  user_id VARCHAR(255) NOT NULL,
-  username VARCHAR(255) NOT NULL,
-  amount INTEGER NOT NULL,valid_from TIMESTAMP NOT NULL,
-  valid_to TIMESTAMP NOT NULL,
-  PRIMARY KEY (user_id, valid_from)
+-- ユーザーテーブルの作成
+CREATE TABLE users (
+  user_id VARCHAR(255) PRIMARY KEY,
+  username VARCHAR(255) NOT NULL
 );
 
+-- 残高テーブルの作成
+CREATE TABLE balances (
+  user_id VARCHAR(255) NOT NULL,
+  amount INTEGER NOT NULL,
+  valid_from TIMESTAMP NOT NULL,
+  valid_to TIMESTAMP NOT NULL,
+  PRIMARY KEY (user_id, valid_from),
+  FOREIGN KEY (user_id) REFERENCES users(user_id)
+);
+
+-- 取引履歴テーブルの作成
 CREATE TABLE transaction_history (
   id SERIAL PRIMARY KEY,
   sender_id VARCHAR(255) NOT NULL,
@@ -76,9 +85,12 @@ CREATE TABLE transaction_history (
   amount INTEGER NOT NULL,
   transaction_id VARCHAR(255) NOT NULL,
   effective_date TIMESTAMP NOT NULL,
-  recorded_at TIMESTAMP NOT NULL
+  recorded_at TIMESTAMP NOT NULL,
+  FOREIGN KEY (sender_id) REFERENCES users(user_id),
+  FOREIGN KEY (receiver_id) REFERENCES users(user_id)
 );
 
+-- インデックスの作成
 CREATE INDEX idx_balances_user_id_valid_to ON balances(user_id, valid_to);
 CREATE INDEX idx_transaction_history_sender_id ON transaction_history(sender_id);
 CREATE INDEX idx_transaction_history_receiver_id ON transaction_history(receiver_id);
@@ -88,9 +100,15 @@ CREATE INDEX idx_transaction_history_transaction_id ON transaction_history(trans
 5. テストデータを挿入します。
 
 ```sql
-INSERT INTO balances (user_id, username, amount, valid_from, valid_to) VALUES
-  ('user1', 'Alice', 1000, '2023-01-01 00:00:00', '9999-12-31 23:59:59'),
-  ('user2', 'Bob', 500, '2023-01-01 00:00:00', '9999-12-31 23:59:59');
+-- ユーザーデータの挿入
+INSERT INTO users (user_id, username) VALUES
+  ('user1', 'Alice'),
+  ('user2', 'Bob');
+
+-- 初期残高データの挿入
+INSERT INTO balances (user_id, amount, valid_from, valid_to) VALUES
+  ('user1', 10000000, '2023-01-01 00:00:00', '9999-12-31 23:59:59'),
+  ('user2', 10000000, '2023-01-01 00:00:00', '9999-12-31 23:59:59');
 ```
 
 ## APIの実行

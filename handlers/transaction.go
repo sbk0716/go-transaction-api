@@ -11,10 +11,15 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
+// User はユーザー情報を表す構造体です
+type User struct {
+	UserID   string `db:"user_id" json:"user_id"`
+	Username string `db:"username" json:"username"`
+}
+
 // Balance は残高情報を表す構造体です
 type Balance struct {
 	UserID    string    `db:"user_id" json:"user_id"`
-	Username  string    `db:"username" json:"username"`
 	Amount    int       `db:"amount" json:"amount"`
 	ValidFrom time.Time `db:"valid_from" json:"valid_from"`
 	ValidTo   time.Time `db:"valid_to" json:"valid_to"`
@@ -86,6 +91,14 @@ func processTransaction(db *sqlx.DB, req TransactionRequest) error {
 		}
 	}()
 
+	// ユーザーの存在を確認します
+	if err := checkUserExists(tx, req.SenderID); err != nil {
+		return err
+	}
+	if err := checkUserExists(tx, req.ReceiverID); err != nil {
+		return err
+	}
+
 	// 排他ロックを取得します
 	if err := acquireLock(tx, req.SenderID, req.ReceiverID); err != nil {
 		return err
@@ -111,6 +124,19 @@ func processTransaction(db *sqlx.DB, req TransactionRequest) error {
 		return err
 	}
 
+	return nil
+}
+
+// checkUserExists はユーザーの存在を確認します
+func checkUserExists(tx *sqlx.Tx, userID string) error {
+	var count int
+	err := tx.Get(&count, "SELECT COUNT(*) FROM users WHERE user_id = $1", userID)
+	if err != nil {
+		return errors.New("Failed to check user existence")
+	}
+	if count == 0 {
+		return errors.New("User does not exist")
+	}
 	return nil
 }
 
@@ -176,9 +202,9 @@ func updateBalance(tx *sqlx.Tx, userID string, amount int, effectiveDate time.Ti
 
 	// 新しい残高レコードを挿入します
 	_, err = tx.Exec(`
-		INSERT INTO balances (user_id, username, amount, valid_from, valid_to) 
-		VALUES ($1, $2, $3, $4, '9999-12-31 23:59:59')
-	`, userID, currentBalance.Username, newAmount, effectiveDate)
+		INSERT INTO balances (user_id, amount, valid_from, valid_to) 
+		VALUES ($1, $2, $3, '9999-12-31 23:59:59')
+	`, userID, newAmount, effectiveDate)
 	if err != nil {
 		return errors.New("Failed to insert new balance record")
 	}
